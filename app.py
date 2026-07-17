@@ -2,43 +2,67 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-st.set_page_config(page_title="Aura AI - Stabile", page_icon="✨", layout="centered")
-st.title("✨ Aura AI - Stabile")
+st.set_page_config(page_title="Aura AI Pro", page_icon="✨")
+st.title("✨ Aura AI - Personal Assistant Pro")
 
-# Leggiamo la chiave
 api_key = st.secrets["API_KEY"]
 client = genai.Client(api_key=api_key)
 
-# Usiamo SOLO gemma, l'unico che sappiamo funzionare per te
-model_name = "models/gemma-4-26b-a4b-it"
+# Inizializziamo la memoria delle chat
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-uploaded_file = st.file_uploader("Carica una foto...", type=['jpg', 'jpeg', 'png'])
-user_input = st.text_area("Cosa vuoi chiedere?", placeholder="Scrivi qui...")
+# Creiamo due tab: una per chattare, una per creare immagini
+tab1, tab2 = st.tabs(["💬 Chat", "🎨 Crea Immagini"])
 
-if st.button("Invia Domanda"):
-    if user_input or uploaded_file:
-        # Messaggio di attesa chiaro
-        with st.spinner("Aura sta riflettendo... (questo modello richiede qualche secondo)"):
-            contents = []
-            if uploaded_file:
-                bytes_data = uploaded_file.getvalue()
-                mime_type = uploaded_file.type
-                contents.append(types.Part.from_bytes(data=bytes_data, mime_type=mime_type))
-            
-            if user_input:
-                contents.append(user_input)
-            elif uploaded_file:
-                contents.append("Cosa vedi in questa immagine? Spiegamelo.")
-            
+# --- TAB 1: CHAT ---
+with tab1:
+    st.header("Chat con Aura")
+    
+    # Mostriamo la cronologia
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Input dell'utente
+    if prompt := st.chat_input("Scrivi a Aura..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Aura sta elaborando..."):
+                try:
+                    # PROVA IL MODELLO LITE: se fallisce, torna a gemma
+                    model = "models/gemini-2.0-flash-lite-001" 
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt
+                    )
+                    st.markdown(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                except:
+                    # Fallback automatico su Gemma se Flash Lite fallisce
+                    response = client.models.generate_content(
+                        model="models/gemma-4-26b-a4b-it",
+                        contents=prompt
+                    )
+                    st.markdown(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+
+# --- TAB 2: IMMAGINI ---
+with tab2:
+    st.header("Generatore Immagini")
+    prompt_img = st.text_input("Descrivi l'immagine che vuoi creare:")
+    if st.button("Crea Immagine"):
+        with st.spinner("Aura sta dipingendo..."):
             try:
-                # Chiamata classica senza streaming (niente più 'none')
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=contents
+                result = client.models.generate_images(
+                    model="models/imagen-4.0-generate-001",
+                    prompt=prompt_img,
+                    config=types.GenerateImagesConfig(number_of_images=1)
                 )
-                st.subheader("Risposta:")
-                st.write(response.text)
+                for generated_image in result.generated_images:
+                    st.image(generated_image.image.image_bytes)
             except Exception as e:
-                st.error("Si è verificato un errore, ma Aura è ancora qui. Riprova tra un istante.")
-    else:
-        st.warning("Inserisci del testo o carica una foto!")
+                st.error(f"Impossibile creare l'immagine: {e}")
