@@ -51,7 +51,7 @@ with tab2:
             try:
                 # Proviamo il modello Fast
                 result = client.models.generate_images(
-                    model="models/imagen-4.0-fast-generate-001",
+                    model="models/imagen-4.0-ultra-generate-001",
                     prompt=prompt_img,
                     config=types.GenerateImagesConfig(number_of_images=1)
                 )
