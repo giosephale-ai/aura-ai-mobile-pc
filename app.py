@@ -1,9 +1,8 @@
 import streamlit as st
-import requests
 from google import genai
+from duckduckgo_search import DDGS  # La nostra arma segreta
 
-st.set_page_config(page_title="Aura AI - Master", page_icon="🔥")
-st.title("🔥 Aura AI - Sbloccata")
+st.set_page_config(page_title="Aura AI - Web", page_icon="🌐")
 
 api_key = st.secrets["API_KEY"]
 client = genai.Client(api_key=api_key)
@@ -11,18 +10,29 @@ client = genai.Client(api_key=api_key)
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Funzione per recuperare il meteo (senza API Key, senza Gemini)
-def get_meteo(citta):
+# Funzione "Scamotage": Cerca su internet per noi
+def cerca_su_internet(query):
     try:
-        url = f"https://wttr.in/{citta}?format=3"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            return response.text
-        return "Non sono riuscita a recuperare il meteo."
+        with DDGS() as ddgs:
+            # Prende i primi 3 risultati
+            results = list(ddgs.text(query, max_results=3))
+            testo_risultati = "\n".join([f"- {r['body']}" for r in results])
+            return testo_risultati
     except:
-        return "Errore nella connessione meteo."
+        return "Non sono riuscita a connettermi a internet."
 
-# UI
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("⚙️ Controllo")
+    usa_web = st.checkbox("🌐 Cerca su Internet", value=False)
+    
+    if st.button("🗑️ Cancella Chat"):
+        st.session_state.messages = []
+        st.rerun()
+
+# --- INTERFACCIA ---
+st.title("✨ Aura AI - Connessa")
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -33,29 +43,23 @@ if prompt := st.chat_input("Chiedi qualcosa..."):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Aura sta ragionando..."):
-            # Logica: Se chiedi il meteo, il codice lo cerca ORA
-            risposta_finale = ""
-            
-            if "meteo" in prompt.lower() or "gradi" in prompt.lower():
-                # Estraiamo la città (molto semplice)
-                citta = "Mondragone" # Di default
-                if "a " in prompt.lower():
-                    citta = prompt.lower().split("a ")[-1].replace("?", "").strip()
-                
-                info_meteo = get_meteo(citta)
-                context = f"L'utente vuole sapere il meteo. Ecco il dato preso in tempo reale: {info_meteo}. Rispondi in modo naturale all'utente."
-            else:
-                context = prompt
-
+        with st.spinner("Aura sta cercando..."):
             try:
-                # Usiamo SEMPRE Gemma (che funziona)
+                final_prompt = prompt
+                
+                # Se l'utente vuole internet, facciamo lo scamotage
+                if usa_web:
+                    info_web = cerca_su_internet(prompt)
+                    final_prompt = f"Usa queste informazioni trovate su internet per rispondere: {info_web}. \n\n Domanda dell'utente: {prompt}"
+                
+                # Inviamo a Gemma (che ora ha tutte le info!)
                 response = client.models.generate_content(
                     model="models/gemma-4-26b-a4b-it",
-                    contents=context
+                    contents=final_prompt
                 )
-                risposta_finale = response.text
-                st.markdown(risposta_finale)
-                st.session_state.messages.append({"role": "assistant", "content": risposta_finale})
+                
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                
             except Exception as e:
                 st.error("Errore: " + str(e))
