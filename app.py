@@ -1,74 +1,77 @@
 import streamlit as st
+import logging
 from google import genai
 from duckduckgo_search import DDGS
 
-st.set_page_config(page_title="Aura AI Architect", page_icon="🤖", layout="wide")
+# --- CONFIGURAZIONE LOGGING (Per capire gli errori) ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# --- BACKEND ---
-api_key = st.secrets["API_KEY"]
-client = genai.Client(api_key=api_key)
+st.set_page_config(page_title="Aura AI Architect", page_icon="🏗️", layout="wide")
+
+# --- INIZIALIZZAZIONE ---
+try:
+    api_key = st.secrets["API_KEY"]
+    client = genai.Client(api_key=api_key)
+except Exception as e:
+    st.error("Errore critico: Configurazione API fallita. Controlla i Secrets.")
+    st.stop()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# --- FUNZIONI DI SERVIZIO ---
 def cerca_su_internet(query):
     try:
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=3))
-            return "\n".join([f"- {r['body']}" for r in results]) if results else None
-    except:
+            if results:
+                return "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+        return None
+    except Exception as e:
+        logger.error(f"Errore ricerca web: {e}")
         return None
 
-# --- SIDEBAR (Centro di Controllo) ---
+# --- UI SIDEBAR ---
 with st.sidebar:
-    st.title("🤖 Aura Architect")
-    mode = st.radio("Modalità Aura:", ["Assistente Generalista", "Software Architect"])
-    use_web = st.checkbox("🌐 Cerca su Internet", value=True)
-    
-    st.divider()
+    st.title("🛠️ Pannello Controllo")
+    use_web = st.checkbox("🌐 Abilita Ricerca Web", value=True)
     if st.button("🗑️ Reset Chat"):
         st.session_state.messages = []
         st.rerun()
-    
-    if st.session_state.messages:
-        chat_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
-        st.download_button("💾 Esporta Memoria", chat_text, "aura_memoria.txt")
 
-# --- LOGICA PERSONA ---
-persona_prompts = {
-    "Assistente Generalista": "Sei Aura, un assistente utile, cordiale e versatile.",
-    "Software Architect": "Sei un programmatore esperto. Analizza le richieste di codice, suggerisci soluzioni efficienti, scrivi codice pulito in blocchi Markdown, anticipa problemi di bug."
-}
-
-# --- INTERFACCIA ---
-st.title(f"✨ Aura AI: {mode}")
+# --- MAIN LOOP ---
+st.title("🏗️ Aura AI Architect")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Cosa dobbiamo fare oggi?"):
+if prompt := st.chat_input("Scrivi codice o chiedi info..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Aura sta elaborando..."):
+        with st.spinner("Aura sta lavorando..."):
             try:
-                # Costruiamo il contesto
-                contesto = persona_prompts[mode]
+                # Logica RAG (Retrieval Augmented Generation)
+                system_prompt = "Sei un senior software engineer. Rispondi in modo tecnico, preciso e scrivi codice pulito."
+                
+                final_content = prompt
                 if use_web:
                     info_web = cerca_su_internet(prompt)
                     if info_web:
-                        contesto += f"\n\nInformazioni web trovate: {info_web}"
-                
-                # Chiamata al cervello
+                        final_content = f"Dati Web:\n{info_web}\n\nDomanda: {prompt}"
+
                 response = client.models.generate_content(
                     model="models/gemma-4-26b-a4b-it",
-                    contents=f"{contesto}\n\nDomanda: {prompt}"
+                    contents=f"{system_prompt}\n\n{final_content}"
                 )
                 
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
+                
             except Exception as e:
-                st.error("Errore: Il cervello è sovraccarico, riprova!")
+                logger.error(f"Errore generazione: {e}")
+                st.error("Errore: Il cervello ha riscontrato un problema. Verifica la console.")
