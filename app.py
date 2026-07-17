@@ -1,51 +1,46 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-import io
 
-st.set_page_config(page_title="Aura AI Pro", page_icon="✨", layout="centered")
-st.title("✨ Aura AI - Personal Assistant")
+st.set_page_config(page_title="Aura AI Turbo", page_icon="⚡", layout="centered")
+st.title("⚡ Aura AI - Turbo Mode")
 
 api_key = st.secrets["API_KEY"]
 client = genai.Client(api_key=api_key)
 
+# Abbiamo messo i modelli FLASH al primo posto perché sono i più veloci
 model_options = [
-    "models/gemini-3.5-flash", 
-    "models/gemini-3.1-flash-image", 
-    "models/gemma-4-26b-a4b-it"
+    "models/gemini-2.0-flash", 
+    "models/gemini-3.5-flash",
+    "models/gemma-4-26b-a4b-it" 
 ]
+model_name = st.selectbox("🧠 Scegli il cervello (Flash è più veloce):", model_options)
 
-model_name = st.selectbox("🧠 Scegli il cervello:", model_options)
-use_search = st.checkbox("🔍 Attiva Ricerca Google")
 uploaded_file = st.file_uploader("Carica una foto...", type=['jpg', 'jpeg', 'png'])
 user_input = st.text_area("Cosa vuoi chiedere?", placeholder="Scrivi qui...")
 
 if st.button("Invia Domanda"):
     if user_input or uploaded_file:
-        with st.spinner("Aura sta analizzando..."):
-            contents = []
-            if uploaded_file:
-                bytes_data = uploaded_file.getvalue()
-                mime_type = uploaded_file.type
-                contents.append(types.Part.from_bytes(data=bytes_data, mime_type=mime_type))
-            if user_input:
-                contents.append(user_input)
-            elif uploaded_file:
-                contents.append("Cosa vedi in questa immagine? Spiegamelo.")
+        contents = []
+        if uploaded_file:
+            bytes_data = uploaded_file.getvalue()
+            mime_type = uploaded_file.type
+            contents.append(types.Part.from_bytes(data=bytes_data, mime_type=mime_type))
+        if user_input:
+            contents.append(user_input)
+        elif uploaded_file:
+            contents.append("Cosa vedi qui? Spiegamelo brevemente.")
             
-            config = {}
-            if use_search:
-                config["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-            
+        with st.chat_message("assistant"):
             try:
-                response = client.models.generate_content(
+                # Usiamo generate_content_stream per vedere la risposta che arriva "a pezzi"
+                response = client.models.generate_content_stream(
                     model=model_name,
-                    contents=contents,
-                    config=types.GenerateContentConfig(**config)
+                    contents=contents
                 )
-                st.subheader("Risposta di Aura AI:")
-                st.write(response.text)
+                # Streamlit scriverà i pezzi man mano che arrivano
+                st.write_stream(chunk.text for chunk in response)
             except Exception as e:
-                st.error(f"Errore tecnico: {e}")
+                st.error(f"Errore: {e}. Prova a cambiare modello nel menu!")
     else:
         st.warning("Inserisci del testo o carica una foto!")
